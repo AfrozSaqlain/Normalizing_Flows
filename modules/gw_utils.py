@@ -1,5 +1,6 @@
 import numpy as np
 import pycbc
+import pycbc.psd
 from pycbc.filter.matchedfilter import matched_filter
 import matplotlib.pyplot as plt
 
@@ -17,7 +18,7 @@ def scale_signal(signal_ts, num):
                                             noise_ts=noise,
                                             peak_window=(2.0, 2.2))
     
-    data = pycbc.types.TimeSeries(np.array(template) + np.array(noise), delta_t=delta_t_eccentric, epoch=start_time_eccentric)
+    data = pycbc.types.TimeSeries(np.asarray(template) + np.asarray(noise), delta_t=delta_t_eccentric, epoch=start_time_eccentric)
     
     template = pycbc.types.TimeSeries(template, delta_t=delta_t_eccentric, epoch=start_time_eccentric)
 
@@ -32,7 +33,7 @@ def scale_signal(signal_ts, num):
         print(f"Scaling signal to achieve SNR of {snr_desired:.2f} for sample {num}")
         scale_factor = snr_desired / peak_snr
         template *= scale_factor
-        data = pycbc.types.TimeSeries(np.array(template) + np.array(noise), delta_t=delta_t_eccentric, epoch=start_time_eccentric)
+        data = pycbc.types.TimeSeries(np.asarray(template) + np.asarray(noise), delta_t=delta_t_eccentric, epoch=start_time_eccentric)
         snr = matched_filter(template = template,  data = data, psd = psd, low_frequency_cutoff=flow)
 
         peak_snr = abs(snr).numpy().max()
@@ -78,8 +79,8 @@ def inject_signal_with_peak_in_window(signal_ts, noise_ts, peak_window=(2.0, 2.2
         The index in the array where the peak was injected.
     """
     # Convert to numpy arrays
-    signal = np.array(signal_ts)
-    noise = np.array(noise_ts)
+    signal = np.asarray(signal_ts)
+    noise = np.asarray(noise_ts)
 
     # Sampling info
     delta_t = noise_ts.delta_t
@@ -116,10 +117,6 @@ def inject_signal_with_peak_in_window(signal_ts, noise_ts, peak_window=(2.0, 2.2
     return padded_signal, delta_t, signal_ts.start_time
 
 def generate_noise():
-    # flow = 5
-    # delta_f = 1 / 32
-    # flen = int(4096 / (2 * delta_f)) + 1
-    # psd = pycbc.psd.aLIGOZeroDetHighPower(flen, delta_f, flow)
 
     delta_t = 1.0 / 4096
     tsamples = int(32 / delta_t)

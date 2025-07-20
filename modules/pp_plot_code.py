@@ -143,7 +143,7 @@ def plot_pp_plot(pp_values, parameter_names, confidence_level=0.95):
     for i in range(len(parameter_names), len(axes)):
         axes[i].set_visible(False)
     
-    plt.suptitle('P-P Plots for All Parameters', fontsize=16, fontweight='bold', y=0.98)
+    plt.suptitle('Q-Q Plots for All Parameters', fontsize=16, fontweight='bold', y=0.98)
     plt.tight_layout()
     plt.subplots_adjust(top=0.93)  # Make room for suptitle
     plt.show()
