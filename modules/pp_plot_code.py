@@ -189,45 +189,6 @@ def compute_pp_statistics(pp_values, parameter_names):
         if not np.isnan(ad_stat):
             print(f"  Anderson-Darling statistic: {ad_stat:.4f}")
 
-# Usage example:
-if __name__ == "__main__":
-    # Load your trained model
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-    # Recreate the flow architecture (same as training)
-    # You'll need to define this again or save/load the architecture
-    
-    # Load the trained weights
-    # flow.load_state_dict(torch.load('trained_flow_model.pth'))
-    
-    # Create test data loader
-    test_data_loader = DataLoader(
-        test_data, batch_size=1,
-        shuffle=False  # Important: don't shuffle for reproducible results
-    )
-    
-    # Calculate P-P values
-    pp_values, parameter_names = calculate_pp_values(
-        flow, test_data_loader, device, num_posterior_samples=5000
-    )
-    
-    # Plot P-P plots - Main subplot grid version
-    print("Generating P-P plots in subplot grid...")
-    fig = plot_pp_plot(pp_values, parameter_names, confidence_level=0.95)
-    
-    # Alternative: Overlaid version (all parameters on one plot)
-    print("Generating overlaid P-P plot...")
-    plot_overlay_pp_plot(pp_values, parameter_names, confidence_level=0.95)
-    
-    # Compute statistics
-    compute_pp_statistics(pp_values, parameter_names)
-    
-    # Save P-P values for later analysis
-    np.save('pp_values.npy', pp_values)
-    np.save('parameter_names.npy', parameter_names)
-    
-    print("\nP-P analysis completed!")
-
 # Alternative: Compact version with all parameters in one plot overlaid
 def plot_overlay_pp_plot(pp_values, parameter_names, confidence_level=0.95):
     """
