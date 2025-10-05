@@ -5,8 +5,37 @@ from scipy import stats
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import corner
+from matplotlib import rc
 
-def calculate_pp_values(flow, test_loader, device, num_posterior_samples=5000):
+# Configure matplotlib
+rc('text', usetex=True)
+rc('font', family='serif')
+rc('font', serif='times')
+rc('mathtext', default='sf')
+rc("lines", markeredgewidth=1)
+rc("lines", linewidth=1)
+rc('axes', labelsize=20)
+rc("axes", linewidth=0.5)
+rc('xtick', labelsize=10)
+rc('ytick', labelsize=10)
+rc('legend', fontsize=10)
+rc('ytick', right=True, direction='in')
+rc('xtick', top=True, direction='in')
+rc('xtick.major', pad=15)
+rc('ytick.major', pad=15)
+rc('xtick.major', size=12)
+rc('ytick.major', size=12)
+rc('xtick.minor', size=7)
+rc('ytick.minor', size=7)
+
+def set_tick_sizes(ax, major=12, minor=7):
+    for line in ax.xaxis.get_ticklines() + ax.yaxis.get_ticklines():
+        line.set_markersize(major)
+    for tick in ax.xaxis.get_minor_ticks() + ax.yaxis.get_minor_ticks():
+        tick.tick1line.set_markersize(minor)
+        tick.tick2line.set_markersize(minor)
+
+def calculate_pp_values(flow, test_loader, sample, device, num_posterior_samples=5000):
     """
     Calculate P-P values for the trained normalizing flow model.
     
@@ -31,7 +60,7 @@ def calculate_pp_values(flow, test_loader, device, num_posterior_samples=5000):
     
     flow.eval()
     pp_values = []
-    parameter_names = list(np.load("parameter_names.npy", allow_pickle=True))
+    parameter_names = list(sample.keys())
     
     with torch.no_grad():
         for idx, (theta_true, data) in enumerate(tqdm(test_loader, desc="Computing P-P values")):
@@ -189,94 +218,160 @@ def compute_pp_statistics(pp_values, parameter_names):
         if not np.isnan(ad_stat):
             print(f"  Anderson-Darling statistic: {ad_stat:.4f}")
 
-# Alternative: Compact version with all parameters in one plot overlaid
 def plot_overlay_pp_plot(pp_values, parameter_names, confidence_level=0.95):
     """
-    Plot all P-P plots overlaid on a single figure with different colors.
+    Plot all P-P plots overlaid on a single figure with different colors, 
+    showing both 95% and 99% confidence intervals.
+
+    Parameters
+    ----------
+    pp_values : ndarray
+        Shape (n_tests, n_parameters), P-P values for each parameter across tests.
+    parameter_names : list of str
+        Names of the parameters.
+    confidence_level : float
+        Confidence interval for the shaded region (default 0.95).
     """
-    n_tests = len(pp_values)
-    
-    # Calculate confidence intervals
+    n_tests = pp_values.shape[0]
+
+    # Calculate 95% CI
     alpha = 1 - confidence_level
-    lower_bound = stats.beta.ppf(alpha/2, np.arange(1, n_tests+1), n_tests - np.arange(1, n_tests+1) + 1)
-    upper_bound = stats.beta.ppf(1 - alpha/2, np.arange(1, n_tests+1), n_tests - np.arange(1, n_tests+1) + 1)
-    
-    plt.figure(figsize=(10, 8))
-    
-    # Expected quantiles (uniform distribution)
+    alpha_lower_bound = stats.beta.ppf(alpha/2, np.arange(1, n_tests+1), n_tests - np.arange(1, n_tests+1) + 1)
+    alpha_upper_bound = stats.beta.ppf(1 - alpha/2, np.arange(1, n_tests+1), n_tests - np.arange(1, n_tests+1) + 1)
+
+    # Calculate 99% CI
+    beta = 1 - 0.99
+    beta_lower_bound = stats.beta.ppf(beta/2, np.arange(1, n_tests+1), n_tests - np.arange(1, n_tests+1) + 1)
+    beta_upper_bound = stats.beta.ppf(1 - beta/2, np.arange(1, n_tests+1), n_tests - np.arange(1, n_tests+1) + 1)
+
+    # Create figure
+    fig, ax = plt.subplots(figsize=(12, 8))
+    set_tick_sizes(ax)
+
+    # Expected quantiles
     expected_quantiles = np.linspace(0, 1, n_tests)
-    
-    # Define colors for different parameters
+
+    # Colors for different parameters
     colors = plt.cm.tab20(np.linspace(0, 1, len(parameter_names)))
-    
+
+    # Plot each parameter
     for i, param_name in enumerate(parameter_names):
-        # Get p-values for this parameter
-        param_pp_values = pp_values[:, i]
-        
-        # Sort p-values
-        sorted_pp = np.sort(param_pp_values)
-        
-        # Plot P-P plot
-        plt.plot(expected_quantiles, sorted_pp, color=colors[i], linewidth=2, 
+        sorted_pp = np.sort(pp_values[:, i])
+        ax.plot(expected_quantiles, sorted_pp, color=colors[i], linewidth=2, 
                 label=param_name, alpha=0.8)
-    
-    # Plot perfect calibration line
-    plt.plot([0, 1], [0, 1], 'k--', linewidth=2, label='Perfect calibration')
-    
-    # Plot confidence interval
-    plt.fill_between(expected_quantiles, lower_bound, upper_bound, 
-                    alpha=0.2, color='gray', label=f'{confidence_level*100}% CI')
-    
-    plt.xlabel('Expected quantile', fontsize=12)
-    plt.ylabel('Observed quantile', fontsize=12)
-    plt.title('P-P Plots for All Parameters (Overlaid)', fontsize=14, fontweight='bold')
-    plt.grid(True, alpha=0.3)
-    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-    plt.xlim(0, 1)
-    plt.ylim(0, 1)
-    
+
+    # Perfect calibration line
+    ax.plot([0, 1], [0, 1], 'k--', linewidth=2, label='Perfect calibration')
+
+    # Fill 99% CI first (lighter)
+    ax.fill_between(expected_quantiles, beta_lower_bound, beta_upper_bound, 
+                    alpha=0.1, color='gray', label='99\% CI')
+
+    # Fill 95% CI on top (darker)
+    ax.fill_between(expected_quantiles, alpha_lower_bound, alpha_upper_bound, 
+                    alpha=0.2, color='gray', label=f'{confidence_level*100:.0f}\% CI')
+
+    # Labels and styling
+    ax.set_xlabel('Expected quantile', fontsize=12)
+    ax.set_ylabel('Observed quantile', fontsize=12)
+    ax.grid(True, alpha=0.3)
+    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+
     plt.tight_layout()
+    plt.savefig('QQ_Plot.pdf')
     plt.show()
 
-# One-at-a-time P-P plot for detailed analysis
-def plot_individual_pp_plots(pp_values, parameter_names, confidence_level=0.95):
-    """
-    Plot individual P-P plots for each parameter separately.
-    """
-    n_tests = len(pp_values)
+# # Alternative: Compact version with all parameters in one plot overlaid
+# def plot_overlay_pp_plot(pp_values, parameter_names, confidence_level=0.95):
+#     """
+#     Plot all P-P plots overlaid on a single figure with different colors.
+#     """
+#     n_tests = len(pp_values)
     
-    # Calculate confidence intervals
-    alpha = 1 - confidence_level
-    lower_bound = stats.beta.ppf(alpha/2, np.arange(1, n_tests+1), n_tests - np.arange(1, n_tests+1) + 1)
-    upper_bound = stats.beta.ppf(1 - alpha/2, np.arange(1, n_tests+1), n_tests - np.arange(1, n_tests+1) + 1)
+#     # Calculate confidence intervals
+#     alpha = 1 - confidence_level
+#     lower_bound = stats.beta.ppf(alpha/2, np.arange(1, n_tests+1), n_tests - np.arange(1, n_tests+1) + 1)
+#     upper_bound = stats.beta.ppf(1 - alpha/2, np.arange(1, n_tests+1), n_tests - np.arange(1, n_tests+1) + 1)
     
-    for i, param_name in enumerate(parameter_names):
-        plt.figure(figsize=(8, 6))
+#     plt.figure(figsize=(10, 8))
+    
+#     # Expected quantiles (uniform distribution)
+#     expected_quantiles = np.linspace(0, 1, n_tests)
+    
+#     # Define colors for different parameters
+#     colors = plt.cm.tab20(np.linspace(0, 1, len(parameter_names)))
+    
+#     for i, param_name in enumerate(parameter_names):
+#         # Get p-values for this parameter
+#         param_pp_values = pp_values[:, i]
         
-        # Get p-values for this parameter
-        param_pp_values = pp_values[:, i]
+#         # Sort p-values
+#         sorted_pp = np.sort(param_pp_values)
         
-        # Sort p-values
-        sorted_pp = np.sort(param_pp_values)
+#         # Plot P-P plot
+#         plt.plot(expected_quantiles, sorted_pp, color=colors[i], linewidth=2, 
+#                 label=param_name, alpha=0.8)
+    
+#     # Plot perfect calibration line
+#     plt.plot([0, 1], [0, 1], 'k--', linewidth=2, label='Perfect calibration')
+    
+#     # Plot confidence interval
+#     plt.fill_between(expected_quantiles, lower_bound, upper_bound, 
+#                     alpha=0.2, color='gray', label=f'{confidence_level*100}% CI')
+    
+#     plt.xlabel('Expected quantile', fontsize=12)
+#     plt.ylabel('Observed quantile', fontsize=12)
+#     # plt.title('Q-Q Plots for All Parameters', fontsize=14, fontweight='bold')
+#     plt.grid(True, alpha=0.3)
+#     plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+#     plt.xlim(0, 1)
+#     plt.ylim(0, 1)
+    
+#     plt.tight_layout()
+#     plt.savefig('QQ_Plot.pdf')
+#     plt.show()
+
+# # One-at-a-time P-P plot for detailed analysis
+# def plot_individual_pp_plots(pp_values, parameter_names, confidence_level=0.95):
+#     """
+#     Plot individual P-P plots for each parameter separately.
+#     """
+#     n_tests = len(pp_values)
+    
+#     # Calculate confidence intervals
+#     alpha = 1 - confidence_level
+#     lower_bound = stats.beta.ppf(alpha/2, np.arange(1, n_tests+1), n_tests - np.arange(1, n_tests+1) + 1)
+#     upper_bound = stats.beta.ppf(1 - alpha/2, np.arange(1, n_tests+1), n_tests - np.arange(1, n_tests+1) + 1)
+    
+#     for i, param_name in enumerate(parameter_names):
+#         plt.figure(figsize=(8, 6))
         
-        # Expected quantiles (uniform distribution)
-        expected_quantiles = np.linspace(0, 1, n_tests)
+#         # Get p-values for this parameter
+#         param_pp_values = pp_values[:, i]
         
-        # Plot P-P plot
-        plt.plot(expected_quantiles, sorted_pp, 'b-', linewidth=2, label='Observed')
-        plt.plot([0, 1], [0, 1], 'r--', linewidth=1, label='Perfect calibration')
+#         # Sort p-values
+#         sorted_pp = np.sort(param_pp_values)
         
-        # Plot confidence interval
-        plt.fill_between(expected_quantiles, lower_bound, upper_bound, 
-                        alpha=0.3, color='gray', label=f'{confidence_level*100}% CI')
+#         # Expected quantiles (uniform distribution)
+#         expected_quantiles = np.linspace(0, 1, n_tests)
         
-        plt.xlabel('Expected quantile')
-        plt.ylabel('Observed quantile')
-        plt.title(f'P-P Plot: {param_name}')
-        plt.grid(True, alpha=0.3)
-        plt.legend()
-        plt.xlim(0, 1)
-        plt.ylim(0, 1)
+#         # Plot P-P plot
+#         plt.plot(expected_quantiles, sorted_pp, 'b-', linewidth=2, label='Observed')
+#         plt.plot([0, 1], [0, 1], 'r--', linewidth=1, label='Perfect calibration')
         
-        plt.tight_layout()
-        plt.show()
+#         # Plot confidence interval
+#         plt.fill_between(expected_quantiles, lower_bound, upper_bound, 
+#                         alpha=0.3, color='gray', label=f'{confidence_level*100}% CI')
+        
+#         plt.xlabel('Expected quantile')
+#         plt.ylabel('Observed quantile')
+#         plt.title(f'P-P Plot: {param_name}')
+#         plt.grid(True, alpha=0.3)
+#         plt.legend()
+#         plt.xlim(0, 1)
+#         plt.ylim(0, 1)
+        
+#         plt.tight_layout()
+#         plt.show()
